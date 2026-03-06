@@ -1,0 +1,14 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/agent.js": {
+      "maxDuration": 120
+    },
+    "api/developer.js": {
+      "maxDuration": 120
+    }
+  }
+}

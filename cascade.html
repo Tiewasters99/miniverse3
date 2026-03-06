@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CASCADE</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; overflow: hidden; font-family: 'Share Tech Mono', monospace; cursor: crosshair; }
+        canvas { display: block; }
+
+        #hud {
+            position: fixed; top: 0; left: 0; right: 0;
+            display: flex; justify-content: space-between; align-items: flex-start;
+            padding: 20px 28px; pointer-events: none; z-index: 10;
+        }
+
+        .player-panel {
+            min-width: 200px;
+            padding: 14px 18px;
+            border: 1px solid;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(6px);
+        }
+        .player-panel.p1 { border-color: rgba(0,220,255,0.3); }
+        .player-panel.p2 { border-color: rgba(255,60,180,0.3); }
+
+        .player-name {
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900;
+            font-size: 13px;
+            letter-spacing: 4px;
+            margin-bottom: 8px;
+        }
+        .p1 .player-name { color: #00dcff; text-shadow: 0 0 12px rgba(0,220,255,0.4); }
+        .p2 .player-name { color: #ff3cb4; text-shadow: 0 0 12px rgba(255,60,180,0.4); }
+
+        .stat-row {
+            font-size: 11px;
+            color: #555;
+            margin: 3px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        .stat-val { color: #999; }
+        .p1 .stat-val.highlight { color: #00dcff; }
+        .p2 .stat-val.highlight { color: #ff3cb4; }
+
+        .freeze-pips {
+            display: flex; gap: 4px; margin-top: 6px;
+        }
+        .pip {
+            width: 8px; height: 8px;
+            border: 1px solid #444;
+            transition: all 0.3s;
+        }
+        .p1 .pip.full { background: #00dcff; border-color: #00dcff; box-shadow: 0 0 6px rgba(0,220,255,0.5); }
+        .p2 .pip.full { background: #ff3cb4; border-color: #ff3cb4; box-shadow: 0 0 6px rgba(255,60,180,0.5); }
+
+        #center-hud {
+            text-align: center;
+            padding-top: 4px;
+        }
+        #game-title {
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900;
+            font-size: 28px;
+            letter-spacing: 10px;
+            color: #333;
+            margin-bottom: 6px;
+        }
+        #round-info {
+            font-size: 11px;
+            color: #444;
+            letter-spacing: 2px;
+        }
+        #turn-indicator {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 12px;
+            letter-spacing: 3px;
+            margin-top: 8px;
+            transition: color 0.3s;
+        }
+
+        #controls-bar {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            display: flex; justify-content: center; gap: 30px;
+            padding: 14px 20px;
+            font-size: 10px;
+            color: #333;
+            letter-spacing: 1px;
+            pointer-events: none; z-index: 10;
+            background: linear-gradient(transparent, rgba(0,0,0,0.6));
+        }
+        .key-hint {
+            border: 1px solid #2a2a2a;
+            padding: 2px 6px;
+            color: #555;
+            font-size: 9px;
+        }
+
+        #freeze-flash {
+            position: fixed; inset: 0;
+            pointer-events: none; z-index: 5;
+            opacity: 0;
+            transition: opacity 0.1s;
+        }
+        #freeze-flash.p1-flash { background: radial-gradient(ellipse at center, rgba(0,220,255,0.15), transparent 70%); }
+        #freeze-flash.p2-flash { background: radial-gradient(ellipse at center, rgba(255,60,180,0.15), transparent 70%); }
+        #freeze-flash.active { opacity: 1; }
+
+        #score-popup {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900;
+            font-size: 48px;
+            letter-spacing: 8px;
+            pointer-events: none;
+            z-index: 20;
+            opacity: 0;
+            transition: opacity 0.4s, transform 0.4s;
+        }
+        #score-popup.show {
+            opacity: 1;
+            transform: translate(-50%, -60%);
+        }
+
+        #action-log {
+            position: fixed; bottom: 50px; left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            color: #444;
+            letter-spacing: 2px;
+            pointer-events: none;
+            z-index: 10;
+            text-align: center;
+            transition: opacity 0.5s;
+        }
+    </style>
+</head>
+<body>
+
+<div id="hud">
+    <div class="player-panel p1">
+        <div class="player-name">SIGNAL</div>
+        <div class="stat-row">SCORE <span class="stat-val highlight" id="p1-score">0</span></div>
+        <div class="stat-row">SEEDS <span class="stat-val" id="p1-cooldown">READY</span></div>
+        <div class="stat-row">DISRUPTS <span class="stat-val" id="p1-disrupts">3</span></div>
+        <div class="stat-row">FREEZES</div>
+        <div class="freeze-pips" id="p1-pips"></div>
+    </div>
+
+    <div id="center-hud">
+        <div id="game-title">CASCADE</div>
+        <div id="round-info">ROUND <span id="round-num">1</span> / 5</div>
+        <div id="turn-indicator">— SIGNAL's TURN —</div>
+    </div>
+
+    <div class="player-panel p2">
+        <div class="player-name">NOISE</div>
+        <div class="stat-row">SCORE <span class="stat-val highlight" id="p2-score">0</span></div>
+        <div class="stat-row">SEEDS <span class="stat-val" id="p2-cooldown">READY</span></div>
+        <div class="stat-row">DISRUPTS <span class="stat-val" id="p2-disrupts">3</span></div>
+        <div class="stat-row">FREEZES</div>
+        <div class="freeze-pips" id="p2-pips"></div>
+    </div>
+</div>
+
+<div id="freeze-flash"></div>
+<div id="score-popup"></div>
+<div id="action-log"></div>
+
+<div id="controls-bar">
+    <span><span class="key-hint">LEFT CLICK</span> SEED (SIGNAL)</span>
+    <span><span class="key-hint">RIGHT CLICK</span> SEED (NOISE)</span>
+    <span><span class="key-hint">Q</span> FREEZE (SIGNAL)</span>
+    <span><span class="key-hint">P</span> FREEZE (NOISE)</span>
+    <span><span class="key-hint">E</span> DISRUPT (SIGNAL)</span>
+    <span><span class="key-hint">O</span> DISRUPT (NOISE)</span>
+    <span><span class="key-hint">W/S</span> ROTATE 4D</span>
+    <span><span class="key-hint">DRAG</span> ORBIT</span>
+</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+    }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ══════════════════════════════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════════════════════════════
+const GRID = 6;
+const TOTAL = GRID ** 4;
+const SPACING = 1.2;
+const FIRE_RATE = 0.002;
+const FIRE_DURATION = 0.8;
+const PROPAGATION_CHANCE = 0.12;
+const PLAYER_PROP_CHANCE = 0.25;
+const SEED_COOLDOWN = 0.8;
+const MAX_FREEZES = 3;
+const MAX_DISRUPTS = 3;
+const DISRUPT_DURATION = 3.0;
+const TOTAL_ROUNDS = 5;
+
+const SILVER = new THREE.Color(0.65, 0.67, 0.70);
+const GOLD   = new THREE.Color(1.0, 0.84, 0.0);
+
+const P1_COLOR     = new THREE.Color(0.0, 0.86, 1.0);
+const P1_COLOR_DIM = new THREE.Color(0.0, 0.4, 0.5);
+const P2_COLOR     = new THREE.Color(1.0, 0.24, 0.71);
+const P2_COLOR_DIM = new THREE.Color(0.5, 0.1, 0.35);
+
+const SOURCE_GLOW  = new THREE.Color(0.3, 1.0, 0.3);
+const TARGET_GLOW  = new THREE.Color(1.0, 0.4, 0.1);
+const DISRUPT_COLOR = new THREE.Color(0.4, 0.0, 0.0);
+
+// ══════════════════════════════════════════════════════════════
+// SCENE
+// ══════════════════════════════════════════════════════════════
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000000, 0.02);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(10, 8, 14);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 0, 0);
+
+// ══════════════════════════════════════════════════════════════
+// 4D GRID
+// ══════════════════════════════════════════════════════════════
+const nodes = [];
+let idx = 0;
+for (let w = 0; w < GRID; w++)
+    for (let z = 0; z < GRID; z++)
+        for (let y = 0; y < GRID; y++)
+            for (let x = 0; x < GRID; x++)
+                nodes.push({ x, y, z, w, index: idx++ });
+
+const nodeStates   = new Float32Array(TOTAL);
+const nodeEnergy   = new Float32Array(TOTAL);
+const nodeOwner    = new Int8Array(TOTAL);
+const nodeDisrupt  = new Float32Array(TOTAL);
+
+const p1Sources = new Set();
+const p1Targets = new Set();
+const p2Sources = new Set();
+const p2Targets = new Set();
+
+for (let i = 0; i < TOTAL; i++) {
+    const n = nodes[i];
+    if (n.x === 0)        p1Sources.add(i);
+    if (n.x === GRID - 1) p1Targets.add(i);
+    if (n.y === 0)        p2Sources.add(i);
+    if (n.y === GRID - 1) p2Targets.add(i);
+}
+
+function coordToIndex(x, y, z, w) {
+    if (x < 0 || x >= GRID || y < 0 || y >= GRID || z < 0 || z >= GRID || w < 0 || w >= GRID) return -1;
+    return w * GRID**3 + z * GRID**2 + y * GRID + x;
+}
+
+const offsets = [[1,0,0,0],[-1,0,0,0],[0,1,0,0],[0,-1,0,0],[0,0,1,0],[0,0,-1,0],[0,0,0,1],[0,0,0,-1]];
+
+const neighborsOf = nodes.map(n => {
+    const result = [];
+    for (const [dx, dy, dz, dw] of offsets) {
+        const ni = coordToIndex(n.x + dx, n.y + dy, n.z + dz, n.w + dw);
+        if (ni >= 0) result.push(ni);
+    }
+    return result;
+});
+
+// ══════════════════════════════════════════════════════════════
+// 4D → 3D PROJECTION
+// ══════════════════════════════════════════════════════════════
+let wAngle = 0;
+const wRotSpeed = 0.4;
+const projectedPositions = new Array(TOTAL);
+
+function project4Dto3D(x4, y4, z4, w4) {
+    const cx = (x4 - (GRID - 1) / 2) * SPACING;
+    const cy = (y4 - (GRID - 1) / 2) * SPACING;
+    let cz = (z4 - (GRID - 1) / 2) * SPACING;
+    let cw = (w4 - (GRID - 1) / 2) * SPACING;
+    const cosA = Math.cos(wAngle), sinA = Math.sin(wAngle);
+    const rz = cz * cosA - cw * sinA;
+    const rw = cz * sinA + cw * cosA;
+    const wDist = 4.0;
+    const scale = wDist / (wDist + rw);
+    return { x: cx * scale, y: cy * scale, z: rz * scale, scale };
+}
+
+// ══════════════════════════════════════════════════════════════
+// POINTS GEOMETRY
+// ══════════════════════════════════════════════════════════════
+const geometry = new THREE.BufferGeometry();
+const positions = new Float32Array(TOTAL * 3);
+const colors    = new Float32Array(TOTAL * 3);
+const sizes     = new Float32Array(TOTAL);
+
+geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+const pointsMaterial = new THREE.ShaderMaterial({
+    uniforms: { uPixelRatio: { value: renderer.getPixelRatio() } },
+    vertexShader: `
+        attribute float size;
+        attribute vec3 color;
+        varying vec3 vColor;
+        uniform float uPixelRatio;
+        void main() {
+            vColor = color;
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = clamp(size * uPixelRatio * (100.0 / -mv.z), 1.0, 50.0);
+            gl_Position = projectionMatrix * mv;
+        }
+    `,
+    fragmentShader: `
+        varying vec3 vColor;
+        void main() {
+            vec2 c = gl_PointCoord - 0.5;
+            float d = length(c);
+            if (d > 0.5) discard;
+            float alpha = smoothstep(0.5, 0.05, d);
+            float glow = exp(-d * 3.5) * 0.7;
+            gl_FragColor = vec4(vColor * (alpha + glow), alpha * 0.9 + glow);
+        }
+    `,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+});
+
+const pointsMesh = new THREE.Points(geometry, pointsMaterial);
+scene.add(pointsMesh);
+
+// ══════════════════════════════════════════════════════════════
+// ARC LINES
+// ══════════════════════════════════════════════════════════════
+const MAX_ARCS = 600;
+const arcGeometry = new THREE.BufferGeometry();
+const arcPositions = new Float32Array(MAX_ARCS * 6);
+const arcColors    = new Float32Array(MAX_ARCS * 6);
+arcGeometry.setAttribute('position', new THREE.BufferAttribute(arcPositions, 3));
+arcGeometry.setAttribute('color', new THREE.BufferAttribute(arcColors, 3));
+arcGeometry.setDrawRange(0, 0);
+
+const arcMaterial = new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.4,
+    blending: THREE.AdditiveBlending, depthWrite: false
+});
+const arcLines = new THREE.LineSegments(arcGeometry, arcMaterial);
+scene.add(arcLines);
+
+const activeArcs = [];
+
+// ══════════════════════════════════════════════════════════════
+// GAME STATE
+// ══════════════════════════════════════════════════════════════
+const players = [
+    null,
+    { score: 0, freezes: MAX_FREEZES, disrupts: MAX_DISRUPTS, seedCooldown: 0, color: P1_COLOR, dimColor: P1_COLOR_DIM, sources: p1Sources, targets: p1Targets, name: 'SIGNAL' },
+    { score: 0, freezes: MAX_FREEZES, disrupts: MAX_DISRUPTS, seedCooldown: 0, color: P2_COLOR, dimColor: P2_COLOR_DIM, sources: p2Sources, targets: p2Targets, name: 'NOISE' },
+];
+
+let currentPlayer = 1;
+let roundNum = 1;
+let frozen = false;
+let freezeTimer = 0;
+let freezePlayer = 0;
+
+// ══════════════════════════════════════════════════════════════
+// RAYCASTING
+// ══════════════════════════════════════════════════════════════
+const raycaster = new THREE.Raycaster();
+raycaster.params.Points.threshold = 0.4;
+const mouse = new THREE.Vector2();
+
+function getClickedNode(event) {
+    mouse.x = (event.clientX / innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObject(pointsMesh);
+    if (intersects.length > 0) return intersects[0].index;
+    return -1;
+}
+
+function seedNode(nodeIdx, playerNum) {
+    const p = players[playerNum];
+    if (p.seedCooldown > 0) return false;
+    if (nodeDisrupt[nodeIdx] > 0) { showAction('DISRUPTED — CANNOT SEED'); return false; }
+    if (nodeStates[nodeIdx] > 0 && nodeOwner[nodeIdx] !== playerNum) { showAction('CONTESTED'); return false; }
+
+    nodeStates[nodeIdx] = FIRE_DURATION;
+    nodeEnergy[nodeIdx] = 1.0;
+    nodeOwner[nodeIdx] = playerNum;
+    p.seedCooldown = SEED_COOLDOWN;
+    showAction(p.name + ' SEEDED');
+    return true;
+}
+
+function disruptNode(nodeIdx, playerNum) {
+    const p = players[playerNum];
+    if (p.disrupts <= 0) { showAction('NO DISRUPTS LEFT'); return false; }
+    if (nodeDisrupt[nodeIdx] > 0) return false;
+
+    nodeDisrupt[nodeIdx] = DISRUPT_DURATION;
+    nodeStates[nodeIdx] = 0;
+    nodeEnergy[nodeIdx] = 0;
+    nodeOwner[nodeIdx] = 0;
+    p.disrupts--;
+    showAction(p.name + ' DISRUPTED NODE');
+    return true;
+}
+
+let p1Mode = 'seed';
+let p2Mode = 'seed';
+
+// ══════════════════════════════════════════════════════════════
+// FREEZE + PATH CHECK
+// ══════════════════════════════════════════════════════════════
+function checkPath(playerNum) {
+    const p = players[playerNum];
+    const visited = new Uint8Array(TOTAL);
+    const queue = [];
+
+    for (const si of p.sources) {
+        if (nodeOwner[si] === playerNum && nodeStates[si] > 0) {
+            queue.push(si);
+            visited[si] = 1;
+        }
+    }
+
+    while (queue.length > 0) {
+        const cur = queue.shift();
+        if (p.targets.has(cur)) return true;
+
+        for (const ni of neighborsOf[cur]) {
+            if (!visited[ni] && nodeOwner[ni] === playerNum && nodeStates[ni] > 0 && nodeDisrupt[ni] <= 0) {
+                visited[ni] = 1;
+                queue.push(ni);
+            }
+        }
+    }
+    return false;
+}
+
+function doFreeze(playerNum) {
+    const p = players[playerNum];
+    if (p.freezes <= 0) { showAction('NO FREEZES LEFT'); return; }
+
+    p.freezes--;
+    frozen = true;
+    freezeTimer = 1.5;
+    freezePlayer = playerNum;
+
+    const flash = document.getElementById('freeze-flash');
+    flash.className = playerNum === 1 ? 'p1-flash active' : 'p2-flash active';
+    setTimeout(() => flash.classList.remove('active'), 300);
+
+    const hasPath = checkPath(playerNum);
+    if (hasPath) {
+        p.score++;
+        showScorePopup(p.name + ' SCORES!', playerNum);
+        showAction('PATH CONNECTED — +1');
+    } else {
+        showAction(p.name + ' FROZE — NO PATH');
+    }
+    updateHUD();
+}
+
+// ══════════════════════════════════════════════════════════════
+// INPUT
+// ══════════════════════════════════════════════════════════════
+const keys = {};
+
+window.addEventListener('contextmenu', e => e.preventDefault());
+
+window.addEventListener('mousedown', e => {
+    if (frozen) return;
+    const nodeIdx = getClickedNode(e);
+    if (nodeIdx < 0) return;
+
+    if (e.button === 0) {
+        if (p1Mode === 'disrupt') {
+            disruptNode(nodeIdx, 1);
+            p1Mode = 'seed';
+        } else {
+            seedNode(nodeIdx, 1);
+        }
+    } else if (e.button === 2) {
+        if (p2Mode === 'disrupt') {
+            disruptNode(nodeIdx, 2);
+            p2Mode = 'seed';
+        } else {
+            seedNode(nodeIdx, 2);
+        }
+    }
+    updateHUD();
+});
+
+window.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    keys[k] = true;
+
+    if (k === 'q' && !frozen) doFreeze(1);
+    if (k === 'p' && !frozen) doFreeze(2);
+    if (k === 'e') { p1Mode = 'disrupt'; showAction('SIGNAL: DISRUPT MODE — CLICK TARGET'); }
+    if (k === 'o') { p2Mode = 'disrupt'; showAction('NOISE: DISRUPT MODE — RIGHT-CLICK TARGET'); }
+});
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
+
+// ══════════════════════════════════════════════════════════════
+// HUD
+// ══════════════════════════════════════════════════════════════
+const elP1Score = document.getElementById('p1-score');
+const elP2Score = document.getElementById('p2-score');
+const elP1Cool  = document.getElementById('p1-cooldown');
+const elP2Cool  = document.getElementById('p2-cooldown');
+const elP1Dis   = document.getElementById('p1-disrupts');
+const elP2Dis   = document.getElementById('p2-disrupts');
+const elP1Pips  = document.getElementById('p1-pips');
+const elP2Pips  = document.getElementById('p2-pips');
+const elRound   = document.getElementById('round-num');
+const elTurn    = document.getElementById('turn-indicator');
+const elAction  = document.getElementById('action-log');
+const elPopup   = document.getElementById('score-popup');
+
+function buildPips(container, count, max) {
+    container.innerHTML = '';
+    for (let i = 0; i < max; i++) {
+        const pip = document.createElement('div');
+        pip.className = 'pip' + (i < count ? ' full' : '');
+        container.appendChild(pip);
+    }
+}
+
+function updateHUD() {
+    elP1Score.textContent = players[1].score;
+    elP2Score.textContent = players[2].score;
+    elP1Cool.textContent = players[1].seedCooldown > 0 ? players[1].seedCooldown.toFixed(1) + 's' : 'READY';
+    elP2Cool.textContent = players[2].seedCooldown > 0 ? players[2].seedCooldown.toFixed(1) + 's' : 'READY';
+    elP1Dis.textContent = players[1].disrupts;
+    elP2Dis.textContent = players[2].disrupts;
+    buildPips(elP1Pips, players[1].freezes, MAX_FREEZES);
+    buildPips(elP2Pips, players[2].freezes, MAX_FREEZES);
+    elRound.textContent = roundNum;
+}
+
+let actionTimeout = null;
+function showAction(msg) {
+    elAction.textContent = msg;
+    elAction.style.opacity = '1';
+    clearTimeout(actionTimeout);
+    actionTimeout = setTimeout(() => { elAction.style.opacity = '0'; }, 1500);
+}
+
+function showScorePopup(msg, playerNum) {
+    elPopup.textContent = msg;
+    elPopup.style.color = playerNum === 1 ? '#00dcff' : '#ff3cb4';
+    elPopup.style.textShadow = playerNum === 1
+        ? '0 0 30px rgba(0,220,255,0.6)'
+        : '0 0 30px rgba(255,60,180,0.6)';
+    elPopup.classList.add('show');
+    setTimeout(() => elPopup.classList.remove('show'), 1800);
+}
+
+updateHUD();
+
+// ══════════════════════════════════════════════════════════════
+// ANIMATION LOOP
+// ══════════════════════════════════════════════════════════════
+const clock = new THREE.Clock();
+
+function update() {
+    const dt = frozen ? 0 : clock.getDelta();
+    const time = clock.getElapsedTime();
+
+    if (frozen) {
+        const realDt = clock.getDelta();
+        freezeTimer -= 0.016;
+        if (freezeTimer <= 0) {
+            frozen = false;
+            clock.getDelta();
+        }
+    }
+
+    if (!frozen) {
+        if (players[1].seedCooldown > 0) players[1].seedCooldown = Math.max(0, players[1].seedCooldown - dt);
+        if (players[2].seedCooldown > 0) players[2].seedCooldown = Math.max(0, players[2].seedCooldown - dt);
+
+        if (keys['w']) wAngle += wRotSpeed * dt;
+        if (keys['s']) wAngle -= wRotSpeed * dt;
+        wAngle += dt * 0.03;
+
+        const toFire = [];
+
+        for (let i = 0; i < TOTAL; i++) {
+            if (nodeDisrupt[i] > 0) {
+                nodeDisrupt[i] -= dt;
+                if (nodeDisrupt[i] <= 0) nodeDisrupt[i] = 0;
+                continue;
+            }
+
+            if (nodeStates[i] > 0) {
+                nodeStates[i] -= dt;
+                const t = nodeStates[i] / FIRE_DURATION;
+                nodeEnergy[i] = t;
+
+                if (nodeStates[i] > FIRE_DURATION * 0.35 && nodeStates[i] < FIRE_DURATION * 0.65) {
+                    const propChance = nodeOwner[i] > 0 ? PLAYER_PROP_CHANCE : PROPAGATION_CHANCE;
+                    for (const ni of neighborsOf[i]) {
+                        if (nodeStates[ni] <= 0 && nodeDisrupt[ni] <= 0 && Math.random() < propChance * dt * 60) {
+                            toFire.push({ from: i, to: ni, owner: nodeOwner[i] });
+                        }
+                    }
+                }
+
+                if (nodeStates[i] <= 0) {
+                    nodeStates[i] = 0;
+                    nodeEnergy[i] = 0;
+                    nodeOwner[i] = 0;
+                }
+            } else {
+                if (Math.random() < FIRE_RATE) {
+                    nodeStates[i] = FIRE_DURATION;
+                    nodeEnergy[i] = 1.0;
+                    nodeOwner[i] = 0;
+                }
+            }
+        }
+
+        for (const { from, to, owner } of toFire) {
+            if (nodeStates[to] <= 0 && nodeDisrupt[to] <= 0) {
+                nodeStates[to] = FIRE_DURATION;
+                nodeEnergy[to] = 1.0;
+                nodeOwner[to] = owner;
+                activeArcs.push({ from, to, owner, life: 0.3 });
+            }
+        }
+    }
+
+    const pulse = Math.sin(time * 3.0) * 0.5 + 0.5;
+
+    for (let i = 0; i < TOTAL; i++) {
+        const n = nodes[i];
+        const p = project4Dto3D(n.x, n.y, n.z, n.w);
+
+        positions[i * 3]     = p.x;
+        positions[i * 3 + 1] = p.y;
+        positions[i * 3 + 2] = p.z;
+        projectedPositions[i] = p;
+
+        const energy = nodeEnergy[i];
+        const owner  = nodeOwner[i];
+        const isDisrupted = nodeDisrupt[i] > 0;
+
+        const isP1Source = p1Sources.has(i);
+        const isP1Target = p1Targets.has(i);
+        const isP2Source = p2Sources.has(i);
+        const isP2Target = p2Targets.has(i);
+
+        let r, g, b, sz;
+
+        if (isDisrupted) {
+            const dPulse = Math.sin(time * 8) * 0.3 + 0.5;
+            r = DISRUPT_COLOR.r * dPulse;
+            g = DISRUPT_COLOR.g * dPulse;
+            b = DISRUPT_COLOR.b * dPulse;
+            sz = 0.06 * p.scale;
+        } else if (energy > 0 && owner === 1) {
+            r = THREE.MathUtils.lerp(P1_COLOR_DIM.r, P1_COLOR.r, energy);
+            g = THREE.MathUtils.lerp(P1_COLOR_DIM.g, P1_COLOR.g, energy);
+            b = THREE.MathUtils.lerp(P1_COLOR_DIM.b, P1_COLOR.b, energy);
+            sz = THREE.MathUtils.lerp(0.08, 0.28, energy) * p.scale;
+        } else if (energy > 0 && owner === 2) {
+            r = THREE.MathUtils.lerp(P2_COLOR_DIM.r, P2_COLOR.r, energy);
+            g = THREE.MathUtils.lerp(P2_COLOR_DIM.g, P2_COLOR.g, energy);
+            b = THREE.MathUtils.lerp(P2_COLOR_DIM.b, P2_COLOR.b, energy);
+            sz = THREE.MathUtils.lerp(0.08, 0.28, energy) * p.scale;
+        } else if (energy > 0) {
+            r = THREE.MathUtils.lerp(SILVER.r * 0.4, GOLD.r, energy);
+            g = THREE.MathUtils.lerp(SILVER.g * 0.4, GOLD.g, energy);
+            b = THREE.MathUtils.lerp(SILVER.b * 0.4, GOLD.b * 0.5, energy);
+            sz = THREE.MathUtils.lerp(0.06, 0.2, energy) * p.scale;
+        } else {
+            if (isP1Source) {
+                const t = pulse * 0.3;
+                r = P1_COLOR.r * 0.15 + t * 0.1;
+                g = P1_COLOR.g * 0.15 + t * 0.1;
+                b = P1_COLOR.b * 0.15 + t * 0.05;
+                sz = (0.05 + pulse * 0.02) * p.scale;
+            } else if (isP1Target) {
+                const t = pulse * 0.3;
+                r = P1_COLOR.r * 0.2 + t * 0.15;
+                g = P1_COLOR.g * 0.1;
+                b = P1_COLOR.b * 0.05;
+                sz = (0.06 + pulse * 0.02) * p.scale;
+            } else if (isP2Source) {
+                const t = pulse * 0.3;
+                r = P2_COLOR.r * 0.15 + t * 0.1;
+                g = P2_COLOR.g * 0.15 + t * 0.05;
+                b = P2_COLOR.b * 0.15 + t * 0.1;
+                sz = (0.05 + pulse * 0.02) * p.scale;
+            } else if (isP2Target) {
+                const t = pulse * 0.3;
+                r = P2_COLOR.r * 0.2 + t * 0.15;
+                g = P2_COLOR.g * 0.05;
+                b = P2_COLOR.b * 0.1;
+                sz = (0.06 + pulse * 0.02) * p.scale;
+            } else {
+                r = SILVER.r * 0.25;
+                g = SILVER.g * 0.25;
+                b = SILVER.b * 0.25;
+                sz = 0.04 * p.scale;
+            }
+        }
+
+        colors[i * 3]     = r;
+        colors[i * 3 + 1] = g;
+        colors[i * 3 + 2] = b;
+        sizes[i] = sz;
+    }
+
+    geometry.attributes.position.needsUpdate = true;
+    geometry.attributes.color.needsUpdate = true;
+    geometry.attributes.size.needsUpdate = true;
+
+    let arcCount = 0;
+    for (let i = activeArcs.length - 1; i >= 0; i--) {
+        if (!frozen) activeArcs[i].life -= clock.getDelta() || 0.016;
+        if (activeArcs[i].life <= 0) { activeArcs.splice(i, 1); continue; }
+        if (arcCount >= MAX_ARCS) continue;
+
+        const arc = activeArcs[i];
+        const nFrom = nodes[arc.from], nTo = nodes[arc.to];
+        const pFrom = project4Dto3D(nFrom.x, nFrom.y, nFrom.z, nFrom.w);
+        const pTo   = project4Dto3D(nTo.x, nTo.y, nTo.z, nTo.w);
+        const alpha = arc.life / 0.3;
+
+        let ac;
+        if (arc.owner === 1) ac = P1_COLOR;
+        else if (arc.owner === 2) ac = P2_COLOR;
+        else ac = GOLD;
+
+        const j = arcCount * 6;
+        arcPositions[j]     = pFrom.x; arcPositions[j+1] = pFrom.y; arcPositions[j+2] = pFrom.z;
+        arcPositions[j+3]   = pTo.x;   arcPositions[j+4] = pTo.y;   arcPositions[j+5] = pTo.z;
+        arcColors[j]   = ac.r*alpha; arcColors[j+1] = ac.g*alpha; arcColors[j+2] = ac.b*alpha;
+        arcColors[j+3] = ac.r*alpha*0.4; arcColors[j+4] = ac.g*alpha*0.4; arcColors[j+5] = ac.b*alpha*0.4;
+        arcCount++;
+    }
+    arcGeometry.setDrawRange(0, arcCount * 2);
+    arcGeometry.attributes.position.needsUpdate = true;
+    arcGeometry.attributes.color.needsUpdate = true;
+
+    if (Math.random() < 0.1) updateHUD();
+
+    controls.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(update);
+}
+
+update();
+</script>
+</body>
+</html>
