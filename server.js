@@ -4,12 +4,28 @@ import express from 'express';
 import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, existsSync } from 'fs';
 import { join, resolve, relative } from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const PROJECT_ROOT = resolve(__dirname);
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+
+// Auto-rebuild: runs `vite build` after Archie modifies source files
+let rebuilding = false;
+function triggerRebuild(filesModified) {
+  if (rebuilding || !filesModified?.length) return;
+  rebuilding = true;
+  console.log(`[Rebuild] Triggered by changes to: ${filesModified.join(', ')}`);
+  try {
+    execSync('npx vite build', { cwd: PROJECT_ROOT, stdio: 'pipe', timeout: 60000 });
+    console.log('[Rebuild] Success — dist/ updated');
+  } catch (err) {
+    console.error('[Rebuild] Failed:', err.message);
+  }
+  rebuilding = false;
+}
 
 const app = express();
 app.use(express.json({ limit: '5mb' }));
@@ -308,7 +324,7 @@ async function runAgent(apiKey, root, systemPrompt, conversationMessages, model,
     if (i >= 5 && !hasWritten) {
       send({ type: 'status', message: 'Reading files but not making changes — stopping.' });
       send({ type: 'done', reply: 'I read through the code but couldn\'t determine the right changes. Could you be more specific about what you\'d like me to build or change?', filesModified });
-      return;
+      return filesModified;
     }
 
     if (i > 0) await new Promise(r => setTimeout(r, 3000));
@@ -363,7 +379,7 @@ async function runAgent(apiKey, root, systemPrompt, conversationMessages, model,
     }
     if (data.error) {
       send({ type: 'error', message: data.error.message || JSON.stringify(data.error) });
-      return;
+      return filesModified;
     }
 
     const textBlocks = data.content.filter(b => b.type === 'text');
@@ -397,7 +413,7 @@ async function runAgent(apiKey, root, systemPrompt, conversationMessages, model,
       } else {
         send({ type: 'done', reply: fullText, filesModified });
       }
-      return;
+      return filesModified;
     }
 
     const toolResults = [];
@@ -463,6 +479,7 @@ async function runAgent(apiKey, root, systemPrompt, conversationMessages, model,
     }
   }
   send({ type: 'done', reply: 'Reached the iteration limit. Some changes may have been applied.', filesModified });
+  return filesModified;
 }
 
 // --- API Routes ---
@@ -485,7 +502,13 @@ app.post('/api/agent', async (req, res) => {
   try {
     const { messages, model, currentRoom, allRooms, currentUser } = req.body;
     const systemPrompt = makeUnifiedSystem(currentRoom || 'study', allRooms || '', currentUser || null);
-    await runAgent(ANTHROPIC_API_KEY, PROJECT_ROOT, systemPrompt, messages, model, send);
+    const filesModified = await runAgent(ANTHROPIC_API_KEY, PROJECT_ROOT, systemPrompt, messages, model, send);
+    // Auto-rebuild if Archie wrote any source files
+    if (filesModified?.length) {
+      send({ type: 'status', message: 'Rebuilding project to apply changes...' });
+      triggerRebuild(filesModified);
+      send({ type: 'rebuild_done', message: 'Rebuild complete — refresh to see changes.' });
+    }
   } catch (err) {
     send({ type: 'error', message: err.message });
   }

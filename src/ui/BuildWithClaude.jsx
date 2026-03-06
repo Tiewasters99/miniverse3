@@ -518,6 +518,12 @@ export default function BuildWithClaude({
                 m.id === msgId ? { ...m, steps: [...steps] } : m
               ));
               scrollToBottom();
+            } else if (event.type === 'rebuild_done') {
+              steps.push({ icon: '🔄', text: event.message, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
+              setArchitectMessages(prev => prev.map(m =>
+                m.id === msgId ? { ...m, steps: [...steps] } : m
+              ));
+              scrollToBottom();
             } else if (event.type === 'done') {
               const finalText = event.reply || fullText || 'Done.';
               const filesNote = event.filesModified?.length > 0
